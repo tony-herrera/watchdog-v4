@@ -96,3 +96,54 @@ resource "aws_route_table_association" "private_b" {
   subnet_id      = aws_subnet.private_b.id
   route_table_id = aws_route_table.private.id
 }
+
+# 8. Security Group for VPC Endpoints
+resource "aws_security_group" "vpc_endpoints" {
+  name        = "watchdog-endpoints-sg"
+  description = "Allow private traffic to AWS services"
+  vpc_id      = aws_vpc.watchdog_v4.id
+
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.watchdog_v4.cidr_block] # Only allow traffic from inside our VPC
+  }
+
+  tags = { Name = "watchdog-endpoints-sg" }
+}
+
+# 9. S3 Gateway Endpoint (Free & Highly Recommended)
+resource "aws_vpc_endpoint" "s3" {
+  vpc_id       = aws_vpc.watchdog_v4.id
+  service_name = "com.amazonaws.us-west-2.s3"
+  route_table_ids = [
+    aws_route_table.public.id,
+    aws_route_table.private.id
+  ]
+  tags = { Name = "watchdog-s3-endpoint" }
+}
+
+# 10. DynamoDB Gateway Endpoint (Free)
+resource "aws_vpc_endpoint" "dynamodb" {
+  vpc_id       = aws_vpc.watchdog_v4.id
+  service_name = "com.amazonaws.us-west-2.dynamodb"
+  route_table_ids = [
+    aws_route_table.public.id,
+    aws_route_table.private.id
+  ]
+  tags = { Name = "watchdog-dynamodb-endpoint" }
+}
+
+# 11. Bedrock Runtime Interface Endpoint
+# This keeps your AI prompts off the public internet.
+resource "aws_vpc_endpoint" "bedrock_runtime" {
+  vpc_id             = aws_vpc.watchdog_v4.id
+  service_name       = "com.amazonaws.us-west-2.bedrock-runtime"
+  vpc_endpoint_type  = "Interface"
+  security_group_ids = [aws_security_group.vpc_endpoints.id]
+  subnet_ids         = [aws_subnet.private_a.id, aws_subnet.private_b.id]
+  private_dns_enabled = true
+
+  tags = { Name = "watchdog-bedrock-endpoint" }
+}
