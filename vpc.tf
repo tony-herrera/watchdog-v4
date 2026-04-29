@@ -3,38 +3,61 @@ resource "aws_vpc" "watchdog_v4" {
   cidr_block           = "10.0.0.0/16"
   enable_dns_hostnames = true
   enable_dns_support   = true
-
-  tags = {
-    Name = "watchdog-v4-vpc"
-  }
+  tags = { Name = "watchdog-v4-vpc" }
 }
 
-# 2. Public Subnet (For your Load Balancer)
+# 2. Public Subnets (Multi-AZ)
 resource "aws_subnet" "public_a" {
   vpc_id            = aws_vpc.watchdog_v4.id
   cidr_block        = "10.0.1.0/24"
   availability_zone = "us-west-2a"
   map_public_ip_on_launch = true
-
   tags = { Name = "watchdog-public-a" }
 }
 
-# 3. Private Subnet (For your AI Lambda/Fargate)
+resource "aws_subnet" "public_b" {
+  vpc_id            = aws_vpc.watchdog_v4.id
+  cidr_block        = "10.0.2.0/24"
+  availability_zone = "us-west-2b"
+  map_public_ip_on_launch = true
+  tags = { Name = "watchdog-public-b" }
+}
+
+# 3. Private Subnets (Multi-AZ)
 resource "aws_subnet" "private_a" {
   vpc_id            = aws_vpc.watchdog_v4.id
   cidr_block        = "10.0.11.0/24"
   availability_zone = "us-west-2a"
-
   tags = { Name = "watchdog-private-a" }
 }
 
-# 4. The Internet Gateway (The "Front Door")
+resource "aws_subnet" "private_b" {
+  vpc_id            = aws_vpc.watchdog_v4.id
+  cidr_block        = "10.0.12.0/24"
+  availability_zone = "us-west-2b"
+  tags = { Name = "watchdog-private-b" }
+}
+
+# 4. Internet Gateway
 resource "aws_internet_gateway" "igw" {
   vpc_id = aws_vpc.watchdog_v4.id
   tags   = { Name = "watchdog-igw" }
 }
 
-# 6. Public Route Table (Traffic goes to the Internet)
+# 5. NAT Gateway & Elastic IP
+resource "aws_eip" "nat" {
+  domain = "vpc"
+  tags   = { Name = "watchdog-nat-eip" }
+}
+
+resource "aws_nat_gateway" "nat" {
+  allocation_id = aws_eip.nat.id
+  subnet_id     = aws_subnet.public_a.id
+  tags          = { Name = "watchdog-nat-gw" }
+  depends_on    = [aws_internet_gateway.igw]
+}
+
+# 6. Public Routing
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.watchdog_v4.id
   route {
@@ -54,7 +77,7 @@ resource "aws_route_table_association" "public_b" {
   route_table_id = aws_route_table.public.id
 }
 
-# 7. Private Route Table (Traffic goes through the NAT Gateway)
+# 7. Private Routing
 resource "aws_route_table" "private" {
   vpc_id = aws_vpc.watchdog_v4.id
   route {
