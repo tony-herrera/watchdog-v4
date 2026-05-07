@@ -16,3 +16,5 @@ resource "aws_dynamodb_table" "price_sentinel" {
     Environment = "production"
   }
 }
+
+//new db
