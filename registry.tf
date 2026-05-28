@@ -1,9 +1,8 @@
 # 1. The Container Repository for the Watchdog App
 resource "aws_ecr_repository" "watchdog_app" {
   name                 = "watchdog-v4-app"
-  image_tag_mutability = "MUTABLE" # Allows us to push updates using the same tag like 'latest'
+  image_tag_mutability = "MUTABLE"
 
-  # The "Specialist" Security Move: Scan containers for security vulnerabilities on every push
   image_scanning_configuration {
     scan_on_push = true
   }
@@ -14,8 +13,7 @@ resource "aws_ecr_repository" "watchdog_app" {
   }
 }
 
-# 2. Lifecycle Policy (The Cleanup Crew)
-# This keeps costs down by automatically deleting old, untagged "ghost" images after 14 days
+# 2. Lifecycle Policy (The Validated Cleanup Crew)
 resource "aws_ecr_lifecycle_policy" "cleanup" {
   repository = aws_ecr_repository.watchdog_app.name
 
