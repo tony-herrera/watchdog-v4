@@ -25,7 +25,7 @@ resource "aws_ecr_lifecycle_policy" "cleanup" {
             "description": "Keep only the last 5 images to optimize storage costs",
             "selection": {
                 "tagStatus": "any",
-                "countType": "imageCountType",
+                "countType": "imageCountMoreThan", 
                 "countNumber": 5
             },
             "action": {
