@@ -13,22 +13,26 @@ resource "aws_ecr_repository" "watchdog_app" {
   }
 }
 
-# 2. Lifecycle Policy (The Validated Cleanup Crew)
+# 2. Lifecycle Policy (The Strictly-Validated Format)
 resource "aws_ecr_lifecycle_policy" "cleanup" {
   repository = aws_ecr_repository.watchdog_app.name
 
-  policy = jsonencode({
-    rules = [{
-      rulePriority = 1
-      description  = "Keep only the last 5 images to optimize storage costs"
-      selection = {
-        tagStatus   = "any"
-        countType   = "imageCountType"
-        countNumber = 5
-      }
-      action = {
-        type = "expire"
-      }
-    }]
-  })
+  policy = <<EOF
+{
+    "rules": [
+        {
+            "rulePriority": 1,
+            "description": "Keep only the last 5 images to optimize storage costs",
+            "selection": {
+                "tagStatus": "any",
+                "countType": "imageCountType",
+                "countNumber": 5
+            },
+            "action": {
+                "type": "expire"
+            }
+        }
+    ]
+}
+
 }
