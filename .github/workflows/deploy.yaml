@@ -4,11 +4,13 @@ on:
     branches: [ main ]
 
 permissions:
-  id-token: write # Required for OIDC
+  id-token: write 
   contents: read
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  AWS_REGION: us-west-2
+  ECR_REPOSITORY: watchdog-v4-app
 
 jobs:
   deploy:
@@ -21,7 +23,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: us-west-2
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -30,3 +32,19 @@ jobs:
         run: |
           terraform init
           terraform apply -auto-approve
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image to Amazon ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        # Notice we are building from the watchdog-ui folder!
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest ./watchdog-ui
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      - name: Force ECS to pull the new image
+        run: |
+          aws ecs update-service --cluster watchdog-v4-cluster --service watchdog-v4-service --force-new-deployment
