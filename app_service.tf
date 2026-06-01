@@ -54,7 +54,15 @@ resource "aws_ecs_task_definition" "app" {
     portMappings = [{
       containerPort = 80
       hostPort      = 80
-    }]
+    }],
+    # --- NEW: Injecting the Valkey State Engine URL ---
+    environment = [
+      {
+        name  = "REDIS_URL"
+        value = "rediss://watchdog-session-cache-ybur3v.serverless.usw2.cache.amazonaws.com:6379"
+      }
+    ]
+    # --------------------------------------------------
   }])
 }
 
