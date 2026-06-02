@@ -34,28 +34,32 @@ export async function POST(req: Request) {
         // ==========================================
         if (chunkEvent.returnControl) {
           const invocationInputs = chunkEvent.returnControl.invocationInputs;
-          const invocationId = chunkEvent.returnControl.invocationId; // Fixed: invocationId
+          const invocationId = chunkEvent.returnControl.invocationId;
           
           console.log("🎯 [UI Chat Router] Bedrock requested Return Control. Processing tool execution...");
           const toolResults: any[] = [];
 
           for (const input of invocationInputs || []) {
-            // Fixed: targeting functionInvocationInput for Option A console setup
             const groupInput = input.functionInvocationInput; 
             if (!groupInput) continue;
+
+            const normalizedParameters = groupInput.parameters || [];
 
             // Format the payload exactly to bridge Bedrock to your local Next.js MCP Switchboard
             const mcpPayload = {
               actionGroup: groupInput.actionGroup,
-              apiPath: `/${groupInput.function}`, // Fixed: function string name reference
-              parameters: groupInput.parameters || [] // Natively an array from the SDK!
+              apiPath: `/${groupInput.function}`, 
+              parameters: normalizedParameters
             };
 
-            console.log(`📡 [UI Chat Router] Forwarding to internal switchboard: ${mcpPayload.apiPath}`);
+            // Force a hard loopback address to bypass the Codespaces public HTTPS proxy trap
+            const isDev = process.env.NODE_ENV === 'development';
+            const currentPort = process.env.PORT || (isDev ? 3000 : 80);
+            const internalUrl = `http://127.0.0.1:${currentPort}/api/mcp`;
 
-            // Self-invoke your Fargate /api/mcp endpoint locally
-            const { origin } = new URL(req.url);
-            const mcpResponse = await fetch(`${origin}/api/mcp`, {
+            console.log(`📡 [UI Chat Router] Forwarding to internal loopback interface: ${internalUrl}`);
+
+            const mcpResponse = await fetch(internalUrl, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(mcpPayload)
@@ -75,6 +79,7 @@ export async function POST(req: Request) {
                 responseBody: {
                   TEXT: {
                     body: JSON.stringify(mcpData.response.responseBody)
+// Extracting the inner responseBody dictionary directly aligns with Bedrock's observation engine.
                   }
                 }
               }
@@ -83,15 +88,15 @@ export async function POST(req: Request) {
 
           console.log("🔄 [UI Chat Router] Tool results gathered. Resuming Bedrock Agent orchestration cycle...");
 
-          // Build a brand new resume command passing along the validation token and the result array
+          // 4. FIX: Move invocationId INSIDE the sessionState block to tie the response to the transaction context!
           const resumeCommand = new InvokeAgentCommand({
             agentId: "MHHZZXHGCF",
             agentAliasId: "TSTALIASID",
             sessionId: generatedSessionId,
             sessionState: {
+              invocationId: invocationId, // <-- FIXED: Placed at the proper structural layer!
               returnControlInvocationResults: toolResults
-            },
-            inputText: invocationId // Submit invocationId to resume transaction context
+            }
           });
 
           const resumeResponse = await client.send(resumeCommand);
