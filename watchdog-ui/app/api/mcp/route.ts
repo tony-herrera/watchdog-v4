@@ -1,19 +1,16 @@
 import { NextResponse } from 'next/server';
+import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { WATCHDOG_MCP_TOOLS } from '../../../lib/mcp/tools';
 
-// 1. THE DISCOVERY ENDPOINT
-// Bedrock calls this to learn what tools are currently available.
+// 1. Initialize the AWS SDK Lambda Client
+// Fargate will automatically inject the IAM credentials from our task role!
+const lambdaClient = new LambdaClient({ region: 'us-west-2' });
+
 export async function GET() {
-  return NextResponse.json({ 
-    success: true, 
-    tools: WATCHDOG_MCP_TOOLS 
-  });
+  return NextResponse.json({ success: true, tools: WATCHDOG_MCP_TOOLS });
 }
 
-// 2. THE EXECUTION ENDPOINT
-// Bedrock calls this to actually run a tool and get the data back.
 export async function POST(request: Request) {
-  // Start the telemetry timer for Observability
   const startTime = performance.now();
 
   try {
@@ -21,45 +18,44 @@ export async function POST(request: Request) {
     const { actionGroup, apiPath, parameters } = body;
 
     console.log(`⚡ [MCP Server] Incoming execution request for: ${apiPath}`);
-
-    // --- TOOL ROUTER ---
     let responsePayload = {};
 
     if (apiPath === '/fetch_stock_price') {
-      // Extract the ticker symbol from the parameters Bedrock sent
       const ticker = parameters.find((p: any) => p.name === 'ticker_symbol')?.value;
-      
       if (!ticker) throw new Error("Missing required parameter: ticker_symbol");
 
-      // TODO: Wire up actual external API (e.g., Yahoo Finance or Alpaca)
-      responsePayload = {
-        ticker: ticker,
-        price: 135.42,
-        trend: "BULLISH",
-        source: "Watchdog_MCP_Engine"
-      };
+      // --- LAMBDA INVOCATION ---
+      console.log(`📡 [MCP Server] Invoking Fargate -> Lambda worker for ${ticker}...`);
+      
+      const command = new InvokeCommand({
+        FunctionName: 'watchdog-market-data-worker',
+        Payload: JSON.stringify({ ticker: ticker }),
+      });
+
+      // Fire the request to AWS Lambda
+      const { Payload } = await lambdaClient.send(command);
+      if (!Payload) throw new Error("Lambda returned an empty payload.");
+      
+      // Parse the Buffer returned by the AWS SDK
+      const lambdaResponse = JSON.parse(Buffer.from(Payload).toString());
+      
+      if (lambdaResponse.statusCode !== 200) {
+        throw new Error(`Lambda execution failed: ${lambdaResponse.body}`);
+      }
+
+      // Extract the actual financial data from the Lambda body
+      responsePayload = JSON.parse(lambdaResponse.body);
 
     } else if (apiPath === '/generate_technical_chart') {
       const ticker = parameters.find((p: any) => p.name === 'ticker_symbol')?.value;
-      const chartType = parameters.find((p: any) => p.name === 'chart_type')?.value || 'simple_moving_average';
-
-      // TODO: Wire up to S3 Express One Zone and Python generation logic
-      responsePayload = {
-        ticker: ticker,
-        chart_type: chartType,
-        s3_uri: `s3://watchdog-v4-charts/${ticker}_${chartType}_latest.png`,
-        status: "Chart successfully generated and persisted to edge storage."
-      };
-
+      responsePayload = { status: `Chart generation for ${ticker} pending future sprint.` };
     } else {
       throw new Error(`Tool ${apiPath} is not recognized by the MCP Server.`);
     }
 
-    // Stop timer and log telemetry
     const executionTimeMs = Math.round(performance.now() - startTime);
     console.log(`⏱️ [MCP Telemetry] ${apiPath} executed in ${executionTimeMs}ms`);
 
-    // Return the strict format Bedrock requires
     return NextResponse.json({
       messageVersion: '1.0',
       response: {
@@ -76,10 +72,6 @@ export async function POST(request: Request) {
   } catch (error: any) {
     const failureTimeMs = Math.round(performance.now() - startTime);
     console.error(`❌ [MCP Server Error] Failed after ${failureTimeMs}ms:`, error.message);
-    
-    return NextResponse.json(
-      { success: false, error: error.message },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
