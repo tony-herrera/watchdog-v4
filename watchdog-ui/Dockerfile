@@ -14,7 +14,7 @@ RUN npm run build
 
 # 5. Configure the runtime environment
 # We MUST use port 80 to match our ALB and Fargate Terraform configuration
-ENV PORT 80
+ENV PORT=80
 EXPOSE 80
 
 # 6. Start the application
