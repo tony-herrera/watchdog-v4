@@ -51,7 +51,7 @@ export async function POST(request: Request) {
       }
 
       // 2. Cache Miss: Fall back to invoking the Lambda worker microservice
-      console.log(`📡 [Valkey Miss] Invoking Fargate -> Lambda worker for ${ticker.toUpperCase()}...`);
+      console.log(`📡 [Valkey Bypassed] Invoking Fargate -> Lambda worker for ${ticker.toUpperCase()}...`);
       const priceCommand = new InvokeCommand({
         FunctionName: 'watchdog-market-data-worker',
         Payload: JSON.stringify({ action: 'fetch_price', ticker: ticker }),
