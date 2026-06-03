@@ -25,6 +25,7 @@ export async function POST(req: Request) {
     // 3. Send request to Bedrock
     let response = await client.send(command);
     let agentResponse = "";
+    let extractedTickerContext = ""; // Tracker variable to capture active assets dynamically
 
     if (response.completion) {
       for await (const chunkEvent of response.completion) {
@@ -44,6 +45,13 @@ export async function POST(req: Request) {
             if (!groupInput) continue;
 
             const normalizedParameters = groupInput.parameters || [];
+
+            // CAPTURE CONTEXT: Locate the ticker symbol parameter if it is being processed in this turn
+            const tickerParam = normalizedParameters.find((p: any) => p.name === 'ticker_symbol');
+            if (tickerParam && tickerParam.value) {
+              extractedTickerContext = tickerParam.value.toUpperCase();
+              console.log(`💾 [UI Memory Lock] Captured conversational context asset: ${extractedTickerContext}`);
+            }
 
             // Format the payload exactly to bridge Bedrock to your local Next.js MCP Switchboard
             const mcpPayload = {
@@ -71,7 +79,6 @@ export async function POST(req: Request) {
               throw new Error(`Local MCP tool invocation failed: ${mcpData.error || mcpResponse.statusText}`);
             }
             
-            // Re-package the execution result using strict functionResult schema
             toolResults.push({
               functionResult: {
                 actionGroup: groupInput.actionGroup,
@@ -79,7 +86,6 @@ export async function POST(req: Request) {
                 responseBody: {
                   TEXT: {
                     body: JSON.stringify(mcpData.response.responseBody)
-// Extracting the inner responseBody dictionary directly aligns with Bedrock's observation engine.
                   }
                 }
               }
@@ -88,14 +94,18 @@ export async function POST(req: Request) {
 
           console.log("🔄 [UI Chat Router] Tool results gathered. Resuming Bedrock Agent orchestration cycle...");
 
-          // 4. FIX: Move invocationId INSIDE the sessionState block to tie the response to the transaction context!
+          // 4. PERSIST METADATA: Inject session attributes along with your validation token back into AWS
           const resumeCommand = new InvokeAgentCommand({
             agentId: "MHHZZXHGCF",
             agentAliasId: "TSTALIASID",
             sessionId: generatedSessionId,
             sessionState: {
-              invocationId: invocationId, // <-- FIXED: Placed at the proper structural layer!
-              returnControlInvocationResults: toolResults
+              invocationId: invocationId,
+              returnControlInvocationResults: toolResults,
+              // Session attributes stick to this sessionId lifecycle across subsequent turns
+              sessionAttributes: extractedTickerContext ? {
+                last_discussed_ticker: extractedTickerContext
+              } : undefined
             }
           });
 
